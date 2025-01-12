@@ -30,7 +30,6 @@ class SplashScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     Future.delayed(const Duration(seconds: 5), () {
       Navigator.pushReplacement(
-        // ignore: use_build_context_synchronously
         context,
         MaterialPageRoute(builder: (context) => const HomePage()),
       );
@@ -82,8 +81,8 @@ class SplashScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Image.asset(
-                  'assets/jandup.png', // Ruta de tu imagen
-                  height: 24, // Tamaño de la imagen
+                  'assets/jandup.png',
+                  height: 24,
                 ),
               ],
             ),
@@ -117,37 +116,32 @@ class _HomePageState extends State<HomePage> {
     try {
       final response = await http.get(
         Uri.parse('https://linkperu.jandup.com/getDetailBotton'),
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'FlutterApp/1.0',
+        },
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data is List) {
-          final validButtons = data.where((button) {
-            return button.containsKey('imagen') &&
-                button.containsKey('nombre') &&
-                button.containsKey('link');
-          }).toList();
-
           setState(() {
-            buttons = validButtons;
+            buttons = data;
             dataState = DataState.success;
           });
         } else {
           setState(() {
             dataState = DataState.error;
           });
-          print("El API no devolvió datos válidos.");
         }
       } else {
         setState(() {
           dataState = DataState.error;
         });
-        print('Error al obtener los datos: ${response.statusCode}');
       }
     } catch (e) {
       setState(() {
         dataState = DataState.error;
       });
-      print('Error al conectar con el backend: $e');
     }
   }
 
@@ -216,120 +210,66 @@ class _HomePageState extends State<HomePage> {
         centerTitle: true,
         backgroundColor: const Color(0xFF0172B2),
       ),
-      body: Builder(
-        builder: (context) {
-          if (dataState == DataState.loading) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          } else if (dataState == DataState.error) {
-            return const Center(
-              child: Text(
-                'Ocurrió un error al cargar los datos.',
-                style: TextStyle(color: Colors.red),
-              ),
-            );
-          } else {
-            return buttons.isEmpty
-                ? const Center(
-                    child: Text('No se encontraron servicios disponibles.'),
-                  )
-                : GridView.builder(
-                    padding: const EdgeInsets.all(16.0),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 16.0,
-                      mainAxisSpacing: 16.0,
-                    ),
-                    itemCount: buttons.length,
-                    itemBuilder: (context, index) =>
-                        _buildButtonCard(buttons[index]),
-                  );
-          }
-        },
+      body: RefreshIndicator(
+        onRefresh: fetchButtons,
+        child: Builder(
+          builder: (context) {
+            if (dataState == DataState.loading) {
+              return const Center(
+                child: CircularProgressIndicator(),
+              );
+            } else if (dataState == DataState.error) {
+              return const Center(
+                child: Text(
+                  'Ocurrió un error al cargar los datos.',
+                  style: TextStyle(color: Colors.red),
+                ),
+              );
+            } else {
+              return buttons.isEmpty
+                  ? const Center(
+                      child: Text('No se encontraron servicios disponibles.'),
+                    )
+                  : GridView.builder(
+                      padding: const EdgeInsets.all(16.0),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 16.0,
+                        mainAxisSpacing: 16.0,
+                      ),
+                      itemCount: buttons.length,
+                      itemBuilder: (context, index) =>
+                          _buildButtonCard(buttons[index]),
+                    );
+            }
+          },
+        ),
       ),
     );
   }
 }
 
-class WebViewPage extends StatefulWidget {
+class WebViewPage extends StatelessWidget {
   final String url;
 
   const WebViewPage({super.key, required this.url});
 
   @override
-  // ignore: library_private_types_in_public_api
-  _WebViewPageState createState() => _WebViewPageState();
-}
-
-class _WebViewPageState extends State<WebViewPage> {
-  late InAppWebViewController webViewController;
-
-  String formatUrl(String url) {
-    Uri uri = Uri.parse(url);
-
-    // Validaciones específicas para dominios
-    if (uri.host.contains("minedu.gob.pe")) {
-      // Añadir parámetros requeridos para el dominio de MINEDU
-      Map<String, String> requiredParams = {
-        "client_id": "pe.web-app.portal",
-        "redirect_uri": "https://www.perueduca.pe/#/home",
-        "state": "default-state",
-        "response_mode": "fragment",
-        "response_type": "code",
-        "scope": "openid",
-        "nonce": "default-nonce",
-      };
-
-      Map<String, String> updatedParams = {...uri.queryParameters};
-      requiredParams.forEach((key, value) {
-        if (!updatedParams.containsKey(key)) {
-          updatedParams[key] = value;
-        }
-      });
-
-      return uri.replace(queryParameters: updatedParams).toString();
-    }
-
-    // Si es otro dominio (como RENIEC), no realizar modificaciones
-    return url;
-  }
-
-  @override
   Widget build(BuildContext context) {
-    String formattedUrl = formatUrl(widget.url);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detalle'),
         backgroundColor: const Color(0xFF0172B2),
       ),
       body: InAppWebView(
-        initialUrlRequest: URLRequest(url: WebUri(formattedUrl)),
+        initialUrlRequest: URLRequest(url: WebUri(url)),
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
           domStorageEnabled: true,
           cacheEnabled: true,
           mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
         ),
-        onWebViewCreated: (controller) {
-          webViewController = controller;
-        },
-        onLoadStart: (controller, url) {
-          print("Iniciando carga de URL: $url");
-        },
-        onLoadStop: (controller, url) async {
-          print("Carga completa de URL: $url");
-        },
-        onLoadError: (controller, url, code, message) {
-          print(
-              "Error al cargar la URL: $url\nCódigo: $code\nMensaje: $message");
-        },
-        onConsoleMessage: (controller, consoleMessage) {
-          print("Nivel: ${consoleMessage.messageLevel}");
-          print("Mensaje: ${consoleMessage.message}");
-        },
       ),
     );
   }
